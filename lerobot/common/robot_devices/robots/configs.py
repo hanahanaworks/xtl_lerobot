@@ -27,6 +27,7 @@ from lerobot.common.robot_devices.motors.configs import (
     DynamixelMotorsBusConfig,
     FeetechMotorsBusConfig,
     MotorsBusConfig,
+    MyCobotMotorsBusConfig,
 )
 
 
@@ -610,4 +611,56 @@ class LeKiwiRobotConfig(RobotConfig):
         }
     )
 
+    mock: bool = False
+
+
+@RobotConfig.register_subclass("mycobot")
+@dataclass
+class MyCobotRobotConfig(ManipulatorRobotConfig):
+    calibration_dir: str = ".cache/calibration/mycobot"
+    max_relative_target: int | None = 5
+    leader_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": MyCobotMotorsBusConfig(
+                port="/dev/ttyUSB0",  # Default port, change as needed
+                baud=115200,
+                motors={
+                    # name: (index, model)
+                    "joint1": [1, "mycobot"],  # Base rotation
+                    "joint2": [2, "mycobot"],  # Shoulder
+                    "joint3": [3, "mycobot"],  # Elbow
+                    "joint4": [4, "mycobot"],  # Wrist rotation
+                    "joint5": [5, "mycobot"],  # Wrist flex
+                    "joint6": [6, "mycobot"],  # Gripper rotation
+                },
+            ),
+        }
+    )
+    follower_arms: dict[str, MotorsBusConfig] = field(
+        default_factory=lambda: {
+            "main": MyCobotMotorsBusConfig(
+                port="/dev/ttyUSB0",  # Same as leader since it's the same robot
+                baud=115200,
+                motors={
+                    # name: (index, model)
+                    "joint1": [1, "mycobot"],  # Base rotation
+                    "joint2": [2, "mycobot"],  # Shoulder
+                    "joint3": [3, "mycobot"],  # Elbow
+                    "joint4": [4, "mycobot"],  # Wrist rotation
+                    "joint5": [5, "mycobot"],  # Wrist flex
+                    "joint6": [6, "mycobot"],  # Gripper rotation
+                },
+            ),
+        }
+    )
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+            "laptop": OpenCVCameraConfig(
+                camera_index=0,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+        }
+    )
     mock: bool = False
