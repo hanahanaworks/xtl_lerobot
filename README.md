@@ -8,6 +8,7 @@
 - **白アーム（white set）** または **黒アーム（black set）** を個別に選択
 - 各アームで独立したキャリブレーション、テレオペレーション、データ記録が可能
 - 動的なポート設定とカメラ設定
+- **公式のLeRobot control_robot.pyと完全互換**
 
 ### サポートする操作
 - **キャリブレーション**: アームの初期設定とモーター調整
@@ -20,7 +21,7 @@
 xtl_lerobot/
 ├── README.md                          # このファイル
 ├── README_ORIGINAL.md                  # 元のLeRobotのREADME
-├── control_single_arm.py              # 🆕 個別アーム制御スクリプト
+├── control_single_arm.py              # 🆕 個別アーム制御スクリプト（公式互換）
 ├── calibrate_so100_followers.sh       # デュアルアーム用キャリブレーション
 ├── lerobot/
 │   ├── configs/
@@ -64,68 +65,140 @@ xtl_lerobot/
 }
 ```
 
-## 🎯 使用方法
+## 🎯 使用方法（公式互換モード）
+
+### ⚡ クイックスタート（推奨）
+
+**環境変数を使った簡単実行（推奨）**
+
+```bash
+# 白アームのキャリブレーション（動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+
+# 黒アームのキャリブレーション（動作確認済み）
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=calibrate
+
+# 白アームのテレオペレーション（動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate
+
+# 黒アームのテレオペレーション（動作確認済み）
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=teleoperate
+
+# カメラなし高速モード（動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=calibrate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=teleoperate
+
+# データ記録（白アーム、30秒間）
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Pick and place task" \
+    --control.repo_id=test/white_arm_data \
+    --control.episode_time_s=30 \
+    --control.num_episodes=1
+```
 
 ### 1. 個別アームキャリブレーション
 
+**基本的なキャリブレーション**
 ```bash
-# 白アームのキャリブレーション
-python control_single_arm.py --robot_set white --control_type calibrate
+# 白アーム（動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
 
-# 黒アームのキャリブレーション
-python control_single_arm.py --robot_set black --control_type calibrate
+# 黒アーム（動作確認済み）
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=calibrate
 
-# カメラなしのキャリブレーション（軽量・高速）
-python control_single_arm.py --robot_set white --control_type calibrate --no-cameras
-python control_single_arm.py --robot_set black --control_type calibrate --no-cameras
+# カメラなしキャリブレーション（高速・軽量）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=calibrate
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=calibrate
+
+# コマンドライン引数での指定も可能
+python control_single_arm.py --robot.type=so100 --robot_set=white --control.type=calibrate
+python control_single_arm.py --robot.type=so100 --robot_set=black --control.type=calibrate
 ```
 
-**キャリブレーション時の注意点:**
-- 指定したアームセットのフォロワーアームのみを物理的に接続してください
-- キャリブレーション中は画面の指示に従ってアームを手動で動かしてください
-- 通常モード: フォロワー手首カメラを使用（視覚的な確認が可能）
-- カメラなしモード（`--no-cameras`）: カメラを使わず、より高速で軽量な処理
-- キャリブレーションデータは `.cache/calibration/so100_{robot_set}/` に保存されます
+**キャリブレーション時の重要な注意点:**
+- ✅ **指定したアームセットのUSBケーブルを接続してください**
+- ✅ **リーダーとフォロワーの両方のアームを接続**
+- ✅ **画面の指示に従ってアームを手動で動かしてください**
+- ✅ キャリブレーションデータは `.cache/calibration/so100_{robot_set}/` に保存されます
+- 💡 **カメラなしモード**: `--robot.cameras='{}'`で高速キャリブレーション
 
 ### 2. テレオペレーション
 
+**基本的なテレオペレーション**
 ```bash
-# 白アームのテレオペレーション
-python control_single_arm.py --robot_set white --control_type teleoperate
+# 白アーム（動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate
 
-# 黒アームのテレオペレーション  
-python control_single_arm.py --robot_set black --control_type teleoperate
+# 黒アーム（動作確認済み）  
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=teleoperate
 
-# カメラなしのテレオペレーション（高速・軽量）
-python control_single_arm.py --robot_set white --control_type teleoperate --no-cameras
-python control_single_arm.py --robot_set black --control_type teleoperate --no-cameras
+# カメラなしテレオペレーション（高速・軽量、動作確認済み）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=teleoperate
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=teleoperate
+
+# FPS制限あり（推奨）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate --control.fps=30
 ```
 
 **テレオペレーション時の注意点:**
-- リーダーアームとフォロワーアームの両方を接続してください
-- 通常モード: 全カメラ（リーダー手首、フォロワー手首、俯瞰、横視点）が使用されます
-- カメラなしモード（`--no-cameras`）: カメラを使わず、より高速で軽量な制御が可能
-- `Ctrl+C` で終了します
+- ✅ **リーダーアームとフォロワーアームの両方を接続**
+- ✅ **事前にキャリブレーションを完了させてください**
+- ✅ `Ctrl+C` で安全に終了します
+- 💡 **カメラなしモード**: `--robot.cameras='{}'`で高速・軽量な制御
 
 ### 3. データ記録
 
+**基本的なデータ記録**
 ```bash
-# 白アームで30秒間のデータ記録
-python control_single_arm.py --robot_set white --control_type record --duration 30
+# 白アームで30秒間のデータ記録（動作確認済み）
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Pick and place task" \
+    --control.repo_id=test/white_arm_data \
+    --control.episode_time_s=30 \
+    --control.num_episodes=1 \
+    --control.fps=30
 
 # 黒アームで60秒間のデータ記録
-python control_single_arm.py --robot_set black --control_type record --duration 60
+ROBOT_SET=black python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Another task" \
+    --control.repo_id=test/black_arm_data \
+    --control.episode_time_s=60 \
+    --control.num_episodes=1 \
+    --control.fps=30
 
-# カメラなしでのデータ記録（関節データのみ）
-python control_single_arm.py --robot_set white --control_type record --duration 30 --no-cameras
-python control_single_arm.py --robot_set black --control_type record --duration 60 --no-cameras
+# 高速データ記録（高FPS、短時間）
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Test task" \
+    --control.repo_id=test/white_fast \
+    --control.episode_time_s=15 \
+    --control.num_episodes=1 \
+    --control.fps=60
+
+# カメラなしデータ記録（関節データのみ、超高速）
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --robot.cameras='{}' \
+    --control.type=record \
+    --control.single_task="Joints only task" \
+    --control.repo_id=test/joints_only \
+    --control.episode_time_s=15 \
+    --control.num_episodes=1 \
+    --control.fps=120
 ```
 
 **記録されるデータ:**
-- ロボットアームの関節位置と動作
-- 通常モード: 全カメラからの画像データ（30 FPS）
-- カメラなしモード（`--no-cameras`）: 関節データのみ（画像なし、軽量・高速）
-- データセットは `./lerobot_data/` ディレクトリに保存
+- ✅ ロボットアームの関節位置と動作
+- ✅ カメラ画像データ（指定FPS）
+- ✅ タスク記述とメタデータ
+- ✅ データセットは指定された`--control.repo_id`ディレクトリに保存
 
 ### 4. デュアルアームキャリブレーション（従来機能）
 
@@ -134,22 +207,90 @@ python control_single_arm.py --robot_set black --control_type record --duration 
 ./calibrate_so100_followers.sh
 ```
 
-### 高速・軽量ワークフロー（カメラなし）
+### 💡 実用的なワークフロー例
+
+**典型的な作業の流れ**
 
 ```bash
-# 1. 白アームのキャリブレーション（カメラなし、高速）
-python control_single_arm.py --robot_set white --control_type calibrate --no-cameras
+# 1. 白アームのキャリブレーション
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
 
-# 2. カメラなしテレオペレーション（高速動作確認）
-python control_single_arm.py --robot_set white --control_type teleoperate --no-cameras
+# 2. 操作の練習
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate
 
-# 3. カメラなしデータ記録（関節データのみ、高速）
-for i in {1..20}; do
-    echo "Recording episode $i (no cameras)..."
-    python control_single_arm.py --robot_set white --control_type record --duration 15 --no-cameras
+# 3. データ記録（複数エピソード）
+for i in {1..5}; do
+    echo "Recording episode $i..."
+    ROBOT_SET=white python control_single_arm.py \
+        --robot.type=so100 \
+        --control.type=record \
+        --control.single_task="Training episode $i" \
+        --control.repo_id=dataset/white_training \
+        --control.episode_time_s=30 \
+        --control.num_episodes=1 \
+        --control.fps=30
     echo "Episode $i completed. Reset environment for next episode."
     read -p "Press Enter to continue..."
 done
+```
+
+**高速テスト用ワークフロー**
+
+```bash
+# ハードウェア動作確認（短時間）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate --control.fps=60
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=record --control.single_task="Quick test" --control.repo_id=test/quick --control.episode_time_s=10 --control.num_episodes=1 --control.fps=60
+
+# 超高速テスト（カメラなし）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=calibrate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=teleoperate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --robot.cameras='{}' --control.type=record --control.single_task="No camera test" --control.repo_id=test/no_camera --control.episode_time_s=10 --control.num_episodes=1 --control.fps=120
+```
+
+### 🔄 アーム切り替えの方法
+
+```bash
+# 白アームから黒アームに切り替える場合
+# 1. 白アームのUSBケーブルを外す
+# 2. 黒アームのUSBケーブルを接続
+# 3. 黒アーム用のキャリブレーション実行
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=calibrate
+
+# 4. 黒アームでテレオペレーション開始
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=teleoperate
+```
+
+### 🛠️ 高度な設定例
+
+```bash
+# FPS制限とデータ表示を有効にしたテレオペレーション
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=teleoperate \
+    --control.fps=30 \
+    --control.display_data=true
+
+# 高度なデータ記録設定
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Advanced manipulation task" \
+    --control.repo_id=my_dataset/white_advanced \
+    --control.fps=30 \
+    --control.warmup_time_s=5 \
+    --control.episode_time_s=45 \
+    --control.reset_time_s=15 \
+    --control.num_episodes=10 \
+    --control.video=true \
+    --control.display_data=true \
+    --control.play_sounds=true
+
+# 特定のアームのみキャリブレーション
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=calibrate \
+    --control.arms='["main_follower"]'
 ```
 
 ## 🔧 セットアップ
@@ -194,190 +335,204 @@ conda activate lerobot
 
 ### 記録されるデータセット構造
 ```
-lerobot_data/
-└── so100_dataset_{robot_set}_{timestamp}/
-    ├── meta.json                    # データセットメタデータ
-    ├── data/                       
-    │   └── train.parquet           # 関節データ・アクションデータ
-    └── videos/
-        ├── episode_000000/         # エピソードごとの動画
-        │   ├── leader_wrist_camera.mp4
-        │   ├── follower_wrist_camera.mp4
-        │   ├── overhead_camera.mp4
-        │   └── side_camera.mp4
-        └── ...
+{control.repo_id}/
+├── meta.json                    # データセットメタデータ
+├── data/                       
+│   └── train.parquet           # 関節データ・アクションデータ
+└── videos/
+    ├── episode_000000/         # エピソードごとの動画
+    │   ├── leader_wrist_camera.mp4
+    │   ├── follower_wrist_camera.mp4
+    │   ├── overhead_camera.mp4
+    │   └── side_camera.mp4
+    └── ...
 ```
 
 ### データフィールド
 - **observation.state**: フォロワーアームの関節位置
 - **action**: リーダーアームの関節位置（制御指令）
 - **observation.images.{camera_name}**: 各カメラからの画像データ
-- **task**: タスク記述（空文字列）
+- **task**: タスク記述（`--control.single_task`で指定）
 
-## 🛠️ 開発・カスタマイズ
+## 🛠️ 公式機能との互換性
 
-### 新しいロボットセットの追加
-1. `so100_robot_settings.json` に新しいセットを追加
-2. USBポートとカメラポートを適切に設定
-3. 必要に応じてキャリブレーションディレクトリを作成
+### 全ての公式パラメータサポート
 
-**設定ファイルのカスタマイズ例:**
-```json
-{
-  "overhead_camera_port": 1,
-  "side_camera_port": 5,
-  "white": {
-    "leader_port": "/dev/tty.usbmodem59700732621",
-    "follower_port": "/dev/tty.usbmodem58FA0928461",
-    "leader_wrist_camera_port": 999,
-    "follower_wrist_camera_port": 2
-  },
-  "black": {
-    "leader_port": "/dev/tty.usbmodem5A460832451",
-    "follower_port": "/dev/tty.usbmodem5A460853111",
-    "leader_wrist_camera_port": 999,
-    "follower_wrist_camera_port": 0
-  },
-  "experimental": {
-    "leader_port": "/dev/tty.usbmodem1234567890",
-    "follower_port": "/dev/tty.usbmodem0987654321",
-    "leader_wrist_camera_port": 999,
-    "follower_wrist_camera_port": 3
-  }
-}
+```bash
+# 標準的な使用方法（推奨）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=record --control.single_task="Task" --control.repo_id=test/data
+
+# 高度な設定例
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Advanced task" \
+    --control.repo_id=my_dataset/white_arm \
+    --control.fps=30 \
+    --control.episode_time_s=45 \
+    --control.num_episodes=10 \
+    --control.video=true \
+    --control.display_data=true \
+    --control.play_sounds=true
 ```
 
-### カメラ設定の変更
-`create_robot_config()` 関数内の `camera_configs` を編集して、解像度やFPSを調整できます。
+### 元のLeRobotスクリプトとの併用
 
-### FPSの調整
-- **テレオペレーション**: ~100Hz（`time.sleep(0.01)`）
-- **データ記録**: 60Hz（設定可能）
-- **カメラなしモード**: より高いFPSと低い遅延を実現可能
+```bash
+# 元のcontrol_robot.pyスクリプト（デュアルアーム）
+python lerobot/scripts/control_robot.py --robot.type=so100 --control.type=calibrate
 
-### カメラなしモードのメリット
-- **高速処理**: カメラ処理のオーバーヘッドなし
-- **低遅延**: リアルタイム制御の応答性向上
-- **軽量**: メモリとCPU使用量の削減
-- **シンプルデバッグ**: 関節データのみに集中
+# 新しい個別制御スクリプト（単一アーム）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+```
+
+## 💡 実用例
+
+### 基本的な学習データ収集
+
+```bash
+# 1. キャリブレーション
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+
+# 2. 操作練習
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate
+
+# 3. 学習データ収集
+ROBOT_SET=white python control_single_arm.py \
+    --robot.type=so100 \
+    --control.type=record \
+    --control.single_task="Pick and place cups" \
+    --control.repo_id=datasets/cup_picking \
+    --control.episode_time_s=30 \
+    --control.num_episodes=50 \
+    --control.fps=30
+```
+
+### 研究・開発用の高速プロトタイピング
+
+```bash
+# 機能テスト（短時間設定）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=teleoperate --control.fps=60
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=record --control.single_task="Prototype test" --control.repo_id=test/prototype --control.episode_time_s=10 --control.num_episodes=5 --control.fps=60
+```
+
+### アーム間の比較実験
+
+```bash
+# 白アームでのデータ収集
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=record --control.single_task="Task A" --control.repo_id=experiment/white_data --control.episode_time_s=30 --control.num_episodes=20
+
+# 黒アームでのデータ収集
+ROBOT_SET=black python control_single_arm.py --robot.type=so100 --control.type=record --control.single_task="Task A" --control.repo_id=experiment/black_data --control.episode_time_s=30 --control.num_episodes=20
+```
 
 ## 🚨 トラブルシューティング
 
-### 一般的な問題
+### よくある問題と解決方法
 
 **1. Python環境エラー**
 ```
 TypeError: 'type' object is not subscriptable
 ```
-→ conda環境がアクティベートされていない可能性があります：
+→ conda環境が正しくアクティベートされていない：
 ```bash
 conda activate lerobot
 python --version  # Python 3.10.13が表示されることを確認
 ```
 
-**2. ポート接続エラー**
+**2. シリアルポート接続エラー**
 ```
-Error loading robot/camera ports: Robot set 'white' not found in settings file
+SerialException: could not open port /dev/tty.usbmodem...
 ```
-→ `so100_robot_settings.json` の設定を確認してください
+→ アームのUSB接続とポート設定を確認：
+```bash
+# ポート設定の確認
+cat lerobot/configs/so100_robot_settings.json
 
-**3. カメラ接続エラー**
-```
-Camera connection failed
-```
-→ カメラポート番号とデバイス接続を確認してください
+# 接続可能なポートの確認
+ls /dev/tty.usbmodem*
 
-**4. モーター接続エラー**
+# ポート自動検出
+python lerobot/scripts/find_motors_bus_port.py
 ```
-Motor connection failed
-```
-→ USBポートとアーム電源を確認してください
 
-### デバッグ方法
+**3. キャリブレーションファイルが見つからない**
+```
+Calibration file not found '.cache/calibration/so100_white/...'
+```
+→ 正常な動作です。初回キャリブレーション時に自動作成されます
+
+**4. 設定ファイルが見つからない**
+```
+Error loading robot/camera ports: Robot set 'white' not found
+```
+→ 設定ファイルの確認：
+```bash
+# 設定ファイルの存在確認
+ls -la lerobot/configs/so100_robot_settings.json
+
+# 設定内容の確認
+cat lerobot/configs/so100_robot_settings.json
+```
+
+### デバッグ用コマンド
+
 ```bash
 # Python環境の確認
 conda activate lerobot
 python --version
 which python
 
-# ポート設定の確認
+# 設定読み込みテスト
 python -c "from lerobot.common.robot_config_utils import load_robot_ports; print(load_robot_ports('white'))"
 
-# 利用可能なカメラの確認
-ls /dev/video*
+# キャリブレーション状態確認
+ls -la .cache/calibration/so100_white/
+
+# 利用可能なUSBポート確認
+ls /dev/tty.usbmodem*
 ```
 
-## 🔗 従来機能との互換性
+### 推奨される解決手順
 
-### 元のLeRobotスクリプトも使用可能
+1. **環境変数を使用した実行**（推奨）
+   ```bash
+   ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+   ```
 
-```bash
-# 元のrecord_dataset.pyスクリプト（robot_set対応）
-python lerobot/scripts/record_dataset.py --robot_set white --duration 30
+2. **ハードウェア接続の確認**
+   - USBケーブルの接続
+   - アーム電源の確認
+   - 正しいロボットセット（white/black）のアームが接続されているか
 
-# 元のcontrol_robot.pyスクリプト
-python lerobot/scripts/control_robot.py --robot.type=so100 --control.type=calibrate
-```
-
-### 移行されたファイル一覧
-
-#### 🆕 新規作成
-- `control_single_arm.py` - 統合個別アーム制御スクリプト
-- `lerobot/common/robot_config_utils.py` - 設定読み込みユーティリティ
-
-#### 📋 コピー・移行されたファイル
-- `lerobot/configs/so100_robot_settings.json` - ポート設定（~/lerobotから移行）
-- `lerobot/scripts/record_dataset.py` - robot_set対応記録スクリプト（~/lerobotから移行）
-- `calibrate_so100_followers.sh` - デュアルアーム用キャリブレーション（~/lerobotから移行）
-- `.cache/calibration/so100_dual_replay/` - キャリブレーションデータ（~/lerobotから移行）
-
-## 💡 実用例
-
-### 典型的なワークフロー
-
-```bash
-# 1. 白アームのキャリブレーション
-python control_single_arm.py --robot_set white --control_type calibrate
-
-# 2. 白アームでテレオペレーションの練習
-python control_single_arm.py --robot_set white --control_type teleoperate
-
-# 3. データ記録（複数エピソード）
-for i in {1..10}; do
-    echo "Recording episode $i..."
-    python control_single_arm.py --robot_set white --control_type record --duration 30
-    echo "Episode $i completed. Reset environment for next episode."
-    read -p "Press Enter to continue..."
-done
-```
-
-### 高速・軽量ワークフロー（カメラなし）
-
-```bash
-# 1. 白アームのキャリブレーション（カメラなし、高速）
-python control_single_arm.py --robot_set white --control_type calibrate --no-cameras
-
-# 2. カメラなしテレオペレーション（高速動作確認）
-python control_single_arm.py --robot_set white --control_type teleoperate --no-cameras
-
-# 3. カメラなしデータ記録（関節データのみ、高速）
-for i in {1..20}; do
-    echo "Recording episode $i (no cameras)..."
-    python control_single_arm.py --robot_set white --control_type record --duration 15 --no-cameras
-    echo "Episode $i completed. Reset environment for next episode."
-    read -p "Press Enter to continue..."
-done
-```
-
-### カメラありとなしの使い分け
-
-| **操作** | **カメラあり** | **カメラなし** |
-|---------|-------------|-------------|
-| **キャリブレーション** | 視覚的確認が可能、正確性重視 | 高速処理、軽量、デバッグ時 |
-| **テレオペレーション** | 画像フィードバック、精密作業 | 高速応答、軽量、動作テスト |
-| **データ記録** | 完全なデータセット（画像+関節） | 関節データのみ、高速収集 |
+3. **設定ファイルの確認**
+   ```bash
+   cat lerobot/configs/so100_robot_settings.json
+   ```
 
 ## 📝 更新履歴
+
+### v2.2 - Production Ready
+- ✅ **動作確認済み**: 環境変数`ROBOT_SET`での個別アーム制御
+- ✅ **READMEの大幅改善**: 実用的で分かりやすい使用例とワークフロー
+- ✅ **エラーハンドリング改善**: 詳細なトラブルシューティングガイド
+- 🛠️ **デバッグ情報削除**: プロダクション用のクリーンなコード
+
+### v2.1 - Argument Parsing Fixed
+- 🔧 `--robot_set`引数パースエラーを修正
+- 🆕 環境変数`ROBOT_SET`による実行サポート
+- 📖 使用方法とトラブルシューティングの改善
+
+### v2.0 - Official Compatibility Edition
+- 🆕 公式LeRobot control_robot.pyとの完全互換性
+- 🆕 Hydra設定システム対応
+- 🆕 `@safe_disconnect`デコレーター使用
+- 🆕 公式の`control_loop()`、`record()`、`calibrate()`関数使用
+- 🆕 全ての公式パラメータサポート
+- 📁 設定ファイル読み込み機能強化
 
 ### v1.0 - Individual Arm Control Edition
 - 🆕 個別アーム制御機能の追加
@@ -388,11 +543,20 @@ done
 
 ## 📞 サポート
 
-問題が発生した場合は、以下を確認してください：
-1. ハードウェア接続（USB、電源、カメラ）
-2. 設定ファイルの内容
-3. キャリブレーションファイルの存在
-4. ログ出力の詳細
+### 推奨実行方法
+
+```bash
+# 環境変数を使用した実行（最も確実）
+ROBOT_SET=white python control_single_arm.py --robot.type=so100 --control.type=calibrate
+```
+
+### 問題が発生した場合の確認項目
+
+1. **conda環境**: `conda activate lerobot`でPython 3.10.13を使用
+2. **設定ファイル**: `lerobot/configs/so100_robot_settings.json`の存在と内容
+3. **ハードウェア**: USBケーブル接続、アーム電源、正しいロボットセット
+4. **キャリブレーション**: キャリブレーションファイルの存在確認
+5. **ポート確認**: `ls /dev/tty.usbmodem*`で利用可能ポート確認
 
 ---
 

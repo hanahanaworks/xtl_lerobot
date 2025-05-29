@@ -1,299 +1,331 @@
 #!/usr/bin/env python3
 """
-個別アーム制御スクリプト
+Individual Arm Control Script - Based on LeRobot's control_robot.py
 
-白アームまたは黒アームを個別に指定してキャリブレーション、テレオペレーション、
-データ記録ができるようにします。
+This script extends the official LeRobot control_robot.py to support individual arm control
+for white and black robot sets.
 
-使用例:
-# 白アームのキャリブレーション
-python control_single_arm.py --robot_set white --control_type calibrate
+Examples:
+# Calibrate white arm
+python control_single_arm.py --robot.type=so100 --robot_set=white --control.type=calibrate
 
-# 白アームのキャリブレーション（カメラなし）
-python control_single_arm.py --robot_set white --control_type calibrate --no-cameras
+# Calibrate white arm without cameras (fast mode)
+python control_single_arm.py --robot.type=so100 --robot_set=white --control.type=calibrate --robot.cameras='{}'
 
-# 黒アームのテレオペレーション
-python control_single_arm.py --robot_set black --control_type teleoperate
+# Teleoperate black arm
+python control_single_arm.py --robot.type=so100 --robot_set=black --control.type=teleoperate
 
-# 黒アームのテレオペレーション（カメラなし）
-python control_single_arm.py --robot_set black --control_type teleoperate --no-cameras
-
-# 白アームでデータ記録
-python control_single_arm.py --robot_set white --control_type record --duration 30
-
-# 白アームでデータ記録（カメラなし）
-python control_single_arm.py --robot_set white --control_type record --duration 30 --no-cameras
+# Record with white arm for 30 seconds
+python control_single_arm.py --robot.type=so100 --robot_set=white --control.type=record --control.single_task="Pick and place task" --control.repo_id=test/white_arm_data --control.episode_time_s=30 --control.num_episodes=1
 """
 
-import argparse
-import time
-from pathlib import Path
+import logging
+import sys
+import os
+from dataclasses import asdict
+from pprint import pformat
 
 from lerobot.common.robot_devices.cameras.configs import OpenCVCameraConfig
+from lerobot.common.robot_devices.control_configs import (
+    CalibrateControlConfig,
+    ControlPipelineConfig,
+    RecordControlConfig,
+    TeleoperateControlConfig,
+)
+from lerobot.common.robot_devices.control_utils import control_loop, record_episode, warmup_record, reset_environment, stop_recording, init_keyboard_listener
 from lerobot.common.robot_devices.motors.configs import FeetechMotorsBusConfig
-from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
 from lerobot.common.robot_devices.robots.configs import So100RobotConfig
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.robot_devices.robots.utils import make_robot_from_config
+from lerobot.common.robot_devices.utils import safe_disconnect
+from lerobot.common.utils.utils import init_logging, log_say, has_method
 from lerobot.common.robot_config_utils import load_robot_ports, load_common_camera_ports
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.common.policies.factory import make_policy
+from lerobot.configs import parser
 
 
-def create_robot_config(robot_set: str, control_type: str, use_cameras: bool = True):
-    """指定されたロボットセットに基づいてロボット設定を作成"""
-    
+def customize_robot_config_for_single_arm(robot_config: So100RobotConfig, robot_set: str):
+    """Customize robot config for single arm control based on robot_set"""
     try:
         common_camera_ports = load_common_camera_ports()
         robot_specific_ports = load_robot_ports(robot_set)
     except (FileNotFoundError, KeyError, ValueError) as e:
-        print(f"Error loading robot/camera ports: {e}")
-        return None
-
-    # カメラ設定を動的に生成
-    camera_configs = {}
-    if use_cameras:
-        if control_type == "calibrate":
-            # キャリブレーション時はフォロワーアームの手首カメラのみ
-            camera_configs = {
-                "follower_wrist_camera": OpenCVCameraConfig(
-                    robot_specific_ports["follower_wrist_camera_port"], 
-                    fps=30, width=640, height=480
-                ),
-            }
-        else:
-            # テレオペレーションや記録時は全カメラ
-            camera_configs = {
-                "leader_wrist_camera": OpenCVCameraConfig(
-                    robot_specific_ports["leader_wrist_camera_port"], 
-                    fps=30, width=640, height=480
-                ),
-                "follower_wrist_camera": OpenCVCameraConfig(
-                    robot_specific_ports["follower_wrist_camera_port"], 
-                    fps=30, width=640, height=480
-                ),
-                "overhead_camera": OpenCVCameraConfig(
-                    common_camera_ports["overhead_camera_port"], 
-                    fps=30, width=640, height=480
-                ),
-                "side_camera": OpenCVCameraConfig(
-                    common_camera_ports["side_camera_port"], 
-                    fps=30, width=640, height=480
-                ),
-            }
-    # use_cameras=Falseの場合、camera_configs={}のまま（カメラなし）
-
-    # リーダーアームの設定
-    leader_arm_config_dict = {}
-    if control_type != "calibrate":
-        leader_arm_config_dict = {
-            "main": FeetechMotorsBusConfig(
-                port=robot_specific_ports["leader_port"],
-                motors={
-                    "shoulder_pan": (1, "sts3215"),
-                    "shoulder_lift": (2, "sts3215"),
-                    "elbow_flex": (3, "sts3215"),
-                    "wrist_flex": (4, "sts3215"),
-                    "wrist_roll": (5, "sts3215"),
-                    "gripper": (6, "sts3215"),
-                },
-            )
-        }
-
-    # フォロワーアームの設定
-    follower_arm_config_dict = {
-        "main": FeetechMotorsBusConfig(
-            port=robot_specific_ports["follower_port"],
-            motors={
-                "shoulder_pan": (1, "sts3215"),
-                "shoulder_lift": (2, "sts3215"),
-                "elbow_flex": (3, "sts3215"),
-                "wrist_flex": (4, "sts3215"),
-                "wrist_roll": (5, "sts3215"),
-                "gripper": (6, "sts3215"),
-            },
-        )
-    }
-
-    # So100ロボット設定にキャリブレーションディレクトリを個別アーム用に設定
-    calibration_dir = f".cache/calibration/so100_{robot_set}"
+        raise ValueError(f"Error loading robot/camera ports for set '{robot_set}': {e}")
     
-    robot_config = So100RobotConfig(
-        cameras=camera_configs, 
-        leader_arms=leader_arm_config_dict, 
-        follower_arms=follower_arm_config_dict,
-        calibration_dir=calibration_dir
-    )
+    # Update calibration directory to be robot_set specific
+    robot_config.calibration_dir = f".cache/calibration/so100_{robot_set}"
+    
+    # Update camera configurations with dynamic ports
+    if robot_config.cameras:
+        # Only include cameras that are specified in the config
+        new_cameras = {}
+        for camera_name, camera_config in robot_config.cameras.items():
+            if camera_name == "leader_wrist_camera":
+                new_cameras[camera_name] = OpenCVCameraConfig(
+                    camera_index=robot_specific_ports["leader_wrist_camera_port"],
+                    fps=camera_config.fps,
+                    width=camera_config.width,
+                    height=camera_config.height,
+                )
+            elif camera_name == "follower_wrist_camera":
+                new_cameras[camera_name] = OpenCVCameraConfig(
+                    camera_index=robot_specific_ports["follower_wrist_camera_port"],
+                    fps=camera_config.fps,
+                    width=camera_config.width,
+                    height=camera_config.height,
+                )
+            elif camera_name == "overhead_camera":
+                new_cameras[camera_name] = OpenCVCameraConfig(
+                    camera_index=common_camera_ports["overhead_camera_port"],
+                    fps=camera_config.fps,
+                    width=camera_config.width,
+                    height=camera_config.height,
+                )
+            elif camera_name == "side_camera":
+                new_cameras[camera_name] = OpenCVCameraConfig(
+                    camera_index=common_camera_ports["side_camera_port"],
+                    fps=camera_config.fps,
+                    width=camera_config.width,
+                    height=camera_config.height,
+                )
+            else:
+                # Keep other cameras as-is
+                new_cameras[camera_name] = camera_config
+        robot_config.cameras = new_cameras
+        
+    # Update motor configurations with dynamic ports
+    if robot_config.leader_arms:
+        for arm_name, arm_config in robot_config.leader_arms.items():
+            if isinstance(arm_config, FeetechMotorsBusConfig):
+                arm_config.port = robot_specific_ports["leader_port"]
+                
+    if robot_config.follower_arms:
+        for arm_name, arm_config in robot_config.follower_arms.items():
+            if isinstance(arm_config, FeetechMotorsBusConfig):
+                arm_config.port = robot_specific_ports["follower_port"]
     
     return robot_config
 
 
-def calibrate_single_arm(robot_set: str, use_cameras: bool = True):
-    """個別アームのキャリブレーション"""
-    camera_status = "カメラあり" if use_cameras else "カメラなし"
-    print(f"--- {robot_set}アームのキャリブレーション開始 ({camera_status}) ---")
+def parse_and_remove_robot_set():
+    """Parse --robot_set from sys.argv and environment variable ROBOT_SET"""
+    robot_set = None
+    new_argv = []
     
-    robot_config = create_robot_config(robot_set, "calibrate", use_cameras=use_cameras)
-    if robot_config is None:
-        return
+    # First check environment variable
+    env_robot_set = os.environ.get('ROBOT_SET')
+    if env_robot_set:
+        robot_set = env_robot_set
     
-    robot = ManipulatorRobot(robot_config)
+    # Then check command line arguments (takes precedence over environment variable)
+    i = 0
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg.startswith('--robot_set='):
+            # Handle --robot_set=value format
+            robot_set = arg.split('=', 1)[1]
+        elif arg == '--robot_set' and i + 1 < len(sys.argv):
+            # Handle --robot_set value format
+            robot_set = sys.argv[i + 1]
+            i += 1  # Skip the next argument (the value)
+        else:
+            new_argv.append(arg)
+        i += 1
+    
+    # Update sys.argv to remove robot_set arguments
+    sys.argv = new_argv
+    
+    # Validate robot_set if provided
+    if robot_set and robot_set not in ['white', 'black', 'experimental']:
+        raise ValueError(f"Invalid robot_set '{robot_set}'. Must be one of: white, black, experimental")
+    
+    return robot_set
+
+
+# Parse robot_set before Hydra processes sys.argv
+ROBOT_SET = parse_and_remove_robot_set()
+
+
+########################################################################################
+# Control modes (based on official control_robot.py)
+########################################################################################
+
+@safe_disconnect
+def calibrate(robot, cfg: CalibrateControlConfig):
+    """Calibrate robot arms - based on official implementation"""
+    arms = robot.available_arms if cfg.arms is None else cfg.arms
+    unknown_arms = [arm_id for arm_id in arms if arm_id not in robot.available_arms]
+    available_arms_str = " ".join(robot.available_arms)
+    unknown_arms_str = " ".join(unknown_arms)
+
+    if arms is None or len(arms) == 0:
+        raise ValueError(
+            "No arm provided. Use `--control.arms` as argument with one or more available arms.\n"
+            f"For instance, to recalibrate all arms add: `--control.arms='[{available_arms_str}]'`"
+        )
+
+    if len(unknown_arms) > 0:
+        raise ValueError(
+            f"Unknown arms provided ('{unknown_arms_str}'). Available arms are `{available_arms_str}`."
+        )
+
+    for arm_id in arms:
+        arm_calib_path = robot.calibration_dir / f"{arm_id}.json"
+        if arm_calib_path.exists():
+            print(f"Removing '{arm_calib_path}'")
+            arm_calib_path.unlink()
+        else:
+            print(f"Calibration file not found '{arm_calib_path}'")
+
+    if robot.is_connected:
+        robot.disconnect()
+
+    # Calling `connect` automatically runs calibration when the calibration file is missing
     robot.connect()
-    print(f"Robot ({robot_set}) connected.")
-
-    # キャリブレーション実行
-    robot.activate_calibration()
-    print("キャリブレーション完了!")
-
     robot.disconnect()
-    print(f"Robot ({robot_set}) disconnected.")
+    print("Calibration is done! You can now teleoperate and record datasets!")
 
 
-def teleoperate_single_arm(robot_set: str, use_cameras: bool = True):
-    """個別アームのテレオペレーション"""
-    camera_status = "カメラあり" if use_cameras else "カメラなし"
-    print(f"--- {robot_set}アームのテレオペレーション開始 ({camera_status}) ---")
-    print("Ctrl+Cで終了します")
-    
-    robot_config = create_robot_config(robot_set, "teleoperate", use_cameras=use_cameras)
-    if robot_config is None:
-        return
-    
-    robot = ManipulatorRobot(robot_config)
-    robot.connect()
-    print(f"Robot ({robot_set}) connected.")
-
-    # キャリブレーションを適用
-    robot.activate_calibration()
-    print("キャリブレーション適用完了. テレオペレーション開始!")
-
-    try:
-        while True:
-            result = robot.teleop_step(record_data=False)
-            # record_data=Falseの場合、teleop_stepはNoneを返すので何もしない
-            time.sleep(0.01)  # 約100Hz
-    except KeyboardInterrupt:
-        print("\nテレオペレーション終了")
-
-    robot.disconnect()
-    print(f"Robot ({robot_set}) disconnected.")
-
-
-def record_single_arm(robot_set: str, duration_s: int, use_cameras: bool = True):
-    """個別アームでのデータ記録"""
-    camera_status = "カメラあり" if use_cameras else "カメラなし"
-    print(f"--- {robot_set}アームのデータ記録開始 ({duration_s}秒間, {camera_status}) ---")
-    
-    robot_config = create_robot_config(robot_set, "record", use_cameras=use_cameras)
-    if robot_config is None:
-        return
-    
-    robot = ManipulatorRobot(robot_config)
-    robot.connect()
-    print(f"Robot ({robot_set}) connected.")
-
-    # キャリブレーションを適用
-    robot.activate_calibration()
-    print("キャリブレーション適用完了.")
-
-    # データセット初期化
-    dataset_name = f"so100_dataset_{robot_set}_{time.strftime('%Y%m%d_%H%M%S')}"
-    datasets_root_dir = Path("./lerobot_data")
-    datasets_root_dir.mkdir(parents=True, exist_ok=True)
-    repo_id = datasets_root_dir / dataset_name
-
-    print(f"Initializing dataset at: {repo_id}")
-    dataset = LeRobotDataset.create(
-        repo_id=str(repo_id),
-        fps=60,
-        features=robot.features,
-        robot=robot,
-        use_videos=True,
+@safe_disconnect
+def teleoperate(robot, cfg: TeleoperateControlConfig):
+    """Teleoperate robot - based on official implementation"""
+    control_loop(
+        robot,
+        control_time_s=cfg.teleop_time_s,
+        fps=cfg.fps,
+        teleoperate=True,
+        display_data=cfg.display_data,
     )
 
-    if any("observation.images" in key for key in robot.features):
-        print("Starting image writer...")
-        dataset.start_image_writer()
 
-    print("Creating new episode buffer...")
-    episode_idx = dataset.create_episode_buffer()
-    print(f"Recording episode {episode_idx}...")
+@safe_disconnect
+def record(robot, cfg: RecordControlConfig):
+    """Record episodes - based on official implementation"""
+    if cfg.resume:
+        dataset = LeRobotDataset(cfg.repo_id, root=cfg.root)
+        if len(robot.cameras) > 0:
+            dataset.start_image_writer(
+                num_processes=cfg.num_image_writer_processes,
+                num_threads=cfg.num_image_writer_threads_per_camera * len(robot.cameras),
+            )
+    else:
+        # Create empty dataset or load existing saved episodes
+        dataset = LeRobotDataset.create(
+            cfg.repo_id,
+            cfg.fps,
+            root=cfg.root,
+            robot=robot,
+            use_videos=cfg.video,
+            image_writer_processes=cfg.num_image_writer_processes,
+            image_writer_threads=cfg.num_image_writer_threads_per_camera * len(robot.cameras),
+        )
 
-    start_time_recording = time.perf_counter()
-    for i in range(int(duration_s * 60)):  # 60 FPS
-        loop_start_time = time.perf_counter()
+    # Load pretrained policy
+    policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
 
-        obs_dict, action_dict = robot.teleop_step(record_data=True)
-        frame_data = {**obs_dict, **action_dict}
-        frame_data["task"] = ""
-        dataset.add_frame(frame_data)
+    if not robot.is_connected:
+        robot.connect()
 
-        loop_elapsed_time = time.perf_counter() - loop_start_time
-        sleep_time = (1.0 / 60) - loop_elapsed_time
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+    listener, events = init_keyboard_listener()
 
-        # 進捗表示
-        if i % 60 == 0:  # 1秒ごとに表示
-            elapsed = time.perf_counter() - start_time_recording
-            print(f"Recording... {elapsed:.1f}s / {duration_s}s")
+    # Execute a few seconds without recording to:
+    # 1. teleoperate the robot to move it in starting position if no policy provided,
+    # 2. give times to the robot devices to connect and start synchronizing,
+    # 3. place the cameras windows on screen
+    enable_teleoperation = policy is None
+    log_say("Warmup record", cfg.play_sounds)
+    warmup_record(robot, events, enable_teleoperation, cfg.warmup_time_s, cfg.display_data, cfg.fps)
 
-    end_time_recording = time.perf_counter()
-    print(f"Recording finished. Total duration: {end_time_recording - start_time_recording:.2f}s")
+    if has_method(robot, "teleop_safety_stop"):
+        robot.teleop_safety_stop()
 
-    print(f"Saving episode {episode_idx} to {repo_id}...")
-    dataset.save_episode()
-    print(f"Episode {episode_idx} saved.")
+    recorded_episodes = 0
+    while True:
+        if recorded_episodes >= cfg.num_episodes:
+            break
 
-    if any("observation.images" in key for key in robot.features):
-        print("Stopping image writer...")
-        dataset.stop_image_writer()
-        dataset._wait_image_writer()
-        print("Image writer stopped.")
+        log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+        record_episode(
+            robot=robot,
+            dataset=dataset,
+            events=events,
+            episode_time_s=cfg.episode_time_s,
+            display_data=cfg.display_data,
+            policy=policy,
+            fps=cfg.fps,
+            single_task=cfg.single_task,
+        )
 
-    print(f"Dataset saved at: {dataset.meta.root}")
+        # Execute a few seconds without recording to give time to manually reset the environment
+        # Skip reset for the last episode to be recorded
+        if not events["stop_recording"] and (
+            (recorded_episodes < cfg.num_episodes - 1) or events["rerecord_episode"]
+        ):
+            log_say("Reset the environment", cfg.play_sounds)
+            reset_environment(robot, events, cfg.reset_time_s, cfg.fps)
 
-    robot.disconnect()
-    print(f"Robot ({robot_set}) disconnected.")
+        if events["rerecord_episode"]:
+            log_say("Re-record episode", cfg.play_sounds)
+            events["rerecord_episode"] = False
+            events["exit_early"] = False
+            dataset.clear_episode_buffer()
+            continue
+
+        dataset.save_episode()
+        recorded_episodes += 1
+
+        if events["stop_recording"]:
+            break
+
+    log_say("Stop recording", cfg.play_sounds, blocking=True)
+    stop_recording(robot, listener, cfg.display_data)
+
+    if cfg.push_to_hub:
+        dataset.push_to_hub(tags=cfg.tags, private=cfg.private)
+
+    log_say("Exiting", cfg.play_sounds)
+    return dataset
 
 
-def main():
-    parser = argparse.ArgumentParser(description="個別アーム制御スクリプト")
-    parser.add_argument(
-        "--robot_set",
-        type=str,
-        required=True,
-        choices=["white", "black"],
-        help="制御するロボットセット ('white' または 'black')"
-    )
-    parser.add_argument(
-        "--control_type",
-        type=str,
-        required=True,
-        choices=["calibrate", "teleoperate", "record"],
-        help="実行する制御タイプ"
-    )
-    parser.add_argument(
-        "--duration",
-        type=int,
-        default=30,
-        help="記録時間（秒、recordモードのみ）"
-    )
-    parser.add_argument(
-        "--no-cameras",
-        action="store_true",
-        help="カメラを使用しない（全ての操作で使用可能、高速・軽量動作）"
-    )
+@parser.wrap()
+def control_single_arm(cfg: ControlPipelineConfig):
+    """Main control function - based on official control_robot.py"""
+    init_logging()
     
-    args = parser.parse_args()
+    # Apply single arm customization if robot_set was specified
+    if ROBOT_SET:
+        if not isinstance(cfg.robot, So100RobotConfig):
+            raise ValueError("--robot_set parameter is only supported for so100 robot type")
+        
+        print(f"Customizing robot configuration for {ROBOT_SET} arm set...")
+        
+        try:
+            cfg.robot = customize_robot_config_for_single_arm(cfg.robot, ROBOT_SET)
+        except Exception as e:
+            print(f"ERROR: Failed to customize robot config for {ROBOT_SET}: {e}")
+            print(f"ERROR: Exception type: {type(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    logging.info(pformat(asdict(cfg)))
 
-    # カメラ使用フラグを設定
-    use_cameras = not args.no_cameras
+    robot = make_robot_from_config(cfg.robot)
 
-    if args.control_type == "calibrate":
-        calibrate_single_arm(args.robot_set, use_cameras=use_cameras)
-    elif args.control_type == "teleoperate":
-        teleoperate_single_arm(args.robot_set, use_cameras=use_cameras)
-    elif args.control_type == "record":
-        record_single_arm(args.robot_set, args.duration, use_cameras=use_cameras)
+    if isinstance(cfg.control, CalibrateControlConfig):
+        calibrate(robot, cfg.control)
+    elif isinstance(cfg.control, TeleoperateControlConfig):
+        teleoperate(robot, cfg.control)
+    elif isinstance(cfg.control, RecordControlConfig):
+        record(robot, cfg.control)
+    else:
+        raise ValueError(f"Unsupported control type: {type(cfg.control)}")
+
+    if robot.is_connected:
+        # Disconnect manually to avoid a "Core dump" during process
+        # termination due to camera threads not properly exiting.
+        robot.disconnect()
 
 
 if __name__ == "__main__":
-    main() 
+    control_single_arm() 
