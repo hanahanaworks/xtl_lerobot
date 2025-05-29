@@ -1,0 +1,16 @@
+{
+  "overhead_camera_port": 1,
+  "side_camera_port": 5,
+  "white": {
+    "leader_port": "/dev/tty.usbmodem59700732621",
+    "follower_port": "/dev/tty.usbmodem58FA0928461",
+    "leader_wrist_camera_port": 999,
+    "follower_wrist_camera_port": 2
+  },
+  "black": {
+    "leader_port": "/dev/tty.usbmodem5A460832451",
+    "follower_port": "/dev/tty.usbmodem5A460853111",
+    "leader_wrist_camera_port": 999,
+    "follower_wrist_camera_port": 0
+  }
+}
